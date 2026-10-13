@@ -1,0 +1,773 @@
+<title>StockFlow Dashboard</title>
+<style>
+/* Layout: sticky top bar, KPI strip, 2-col (chart + AI panel), then reorder list and full inventory table */
+:root{
+  --bg:#f4f6f8; --surface:#ffffff; --ink:#0b1f3f; --ink2:#4a5a6b; --muted:#76869a; --line:#e1e6ec; --line2:#eef1f5;
+  --brand:#0b1f3f; --brand-ink:#ffffff;
+  --s1:#12a84a; --s2:#2a78d6; --s3:#eb6834;
+  --ok:#0f7d3a; --ok-bg:#e1f6e8; --warn:#a86a00; --warn-bg:#fdf1d8; --bad:#c2301f; --bad-bg:#fbe5e1;
+  --font:'Figtree',system-ui,-apple-system,'Segoe UI',sans-serif;
+  --mono:'Figtree',system-ui,-apple-system,'Segoe UI',sans-serif;
+}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){
+  --bg:#071327; --surface:#0d1f3a; --ink:#e8eef5; --ink2:#b5c2d0; --muted:#8497ab; --line:#1c3355; --line2:#142a49;
+  --brand:#12a84a; --brand-ink:#04140a; --s1:#17a853; --s2:#3987e5; --s3:#d95926;
+  --ok:#3ddc84; --ok-bg:#10361f; --warn:#e3a53a; --warn-bg:#3a2d12; --bad:#ef6a58; --bad-bg:#401d18; color-scheme:dark}}
+:root[data-theme="dark"]{
+  --bg:#071327; --surface:#0d1f3a; --ink:#e8eef5; --ink2:#b5c2d0; --muted:#8497ab; --line:#1c3355; --line2:#142a49;
+  --brand:#12a84a; --brand-ink:#04140a; --s1:#17a853; --s2:#3987e5; --s3:#d95926;
+  --ok:#3ddc84; --ok-bg:#10361f; --warn:#e3a53a; --warn-bg:#3a2d12; --bad:#ef6a58; --bad-bg:#401d18; color-scheme:dark}
+*{box-sizing:border-box}
+body{font-variant-numeric:tabular-nums;background:var(--bg);color:var(--ink);font-family:var(--font);font-size:14px;line-height:1.45;padding-inline:16px;padding-block:0 40px}
+.wrap{max-width:1180px;margin:0 auto}
+h1,h2,h3,p{margin:0}
+.top{position:sticky;top:env(safe-area-inset-top,0px);z-index:5;background:var(--bg);display:flex;flex-wrap:wrap;gap:8px 16px;align-items:center;justify-content:space-between;padding-block:14px;border-bottom:1px solid var(--line)}
+.brand{display:flex;align-items:center;gap:10px;min-width:0}
+.logo{width:34px;height:34px;object-fit:contain;flex:none}
+.brand h1{font-size:22px;font-weight:800;letter-spacing:-.03em;line-height:1}.brand h1 span{background:linear-gradient(180deg,#19e063,#0b9a45);-webkit-background-clip:text;background-clip:text;color:transparent}
+.biz{color:var(--muted);font-size:13px}
+.right{display:flex;align-items:center;gap:10px}.theme{display:inline-flex;align-items:center;gap:7px;background:var(--surface);border:1px solid var(--line);border-radius:999px;padding:6px 12px;font-size:12px;font-weight:600;color:var(--ink);cursor:pointer}.theme:hover{border-color:var(--s1)}.theme:focus-visible{outline:2px solid var(--s1);outline-offset:2px}
+.tag{font:500 11px var(--mono);color:var(--warn);background:var(--warn-bg);padding:4px 8px;border-radius:5px}
+.grid{display:grid;gap:16px;margin-top:16px}
+.kpis{grid-template-columns:repeat(4,minmax(0,1fr))}
+.two{grid-template-columns:minmax(0,1.5fr) minmax(0,1fr)}
+@media(max-width:860px){.kpis{grid-template-columns:repeat(2,minmax(0,1fr))}.two{grid-template-columns:minmax(0,1fr)}}
+.card{background:var(--surface);border:1px solid var(--line);border-radius:10px;padding:16px;min-width:0}
+.kpi .l{font:500 11px var(--mono);color:var(--muted)}
+.kpi .v{font-size:28px;font-weight:700;letter-spacing:-.02em;margin-top:4px;font-variant-numeric:tabular-nums}
+.kpi .n{color:var(--ink2);font-size:12px;margin-top:2px}
+.kpi.alert .v{color:var(--bad)}
+.hd{display:flex;flex-wrap:wrap;justify-content:space-between;align-items:baseline;gap:6px 12px;margin-bottom:12px}
+.hd h2{font-size:15px;font-weight:700}
+.hd .sub{color:var(--muted);font-size:12px}
+.legend{display:flex;gap:14px;font-size:12px;color:var(--ink2)}
+.legend i{display:inline-block;width:10px;height:10px;border-radius:2px;margin-right:6px;vertical-align:-1px}
+.chart{position:relative}
+.chart svg{width:100%;height:auto;display:block}
+.chart text{fill:var(--muted);font:11px var(--mono)}
+.tip{position:absolute;pointer-events:none;background:var(--ink);color:var(--bg);font-size:12px;padding:7px 10px;border-radius:6px;white-space:nowrap;transform:translate(-50%,-100%);opacity:0;transition:opacity .1s}
+.tip b{font-variant-numeric:tabular-nums}
+.loc{display:grid;gap:10px;margin-top:18px;padding-top:14px;border-top:1px solid var(--line2)}
+.loc .row{display:grid;grid-template-columns:76px 1fr auto;gap:10px;align-items:center;font-size:13px}
+.bar{height:10px;border-radius:3px;background:var(--line2);overflow:hidden}
+.bar span{display:block;height:100%;border-radius:0 4px 4px 0}
+.num{font-variant-numeric:tabular-nums;font-family:var(--mono);font-size:12px;color:var(--ink2)}
+/* AI */
+.ai{border-color:color-mix(in srgb,var(--s1) 40%,var(--line))}
+.ai-h{display:flex;align-items:center;gap:8px;margin-bottom:4px}
+.ai-h h2{font-size:15px;font-weight:700}
+.chip{font:500 11px var(--mono);padding:3px 7px;border-radius:5px;background:color-mix(in srgb,var(--s1) 14%,transparent);color:var(--s1)}
+.askrow{display:flex;gap:8px;margin-top:12px}
+input,select,button{font:inherit;color:var(--ink)}
+input[type=search],input[type=text],input[type=number],input[type=email],input[type=password],select{background:var(--bg);border:1px solid var(--line);border-radius:7px;padding:9px 11px;min-width:0}
+input:focus-visible,select:focus-visible,button:focus-visible{outline:2px solid var(--s1);outline-offset:2px}
+.askrow input{flex:1}
+.btn{background:var(--brand);color:var(--brand-ink);border:0;border-radius:7px;padding:9px 14px;font-weight:600;cursor:pointer}
+.btn.ghost{background:transparent;color:var(--ink);border:1px solid var(--line)}
+.sugg{display:flex;flex-wrap:wrap;gap:6px;margin-top:10px}
+.sugg button{background:transparent;border:1px solid var(--line);border-radius:999px;padding:5px 10px;font-size:12px;color:var(--ink2);cursor:pointer}
+.sugg button:hover{border-color:var(--s1);color:var(--s1)}
+.ans{margin-top:12px;padding:12px;background:var(--bg);border-radius:8px;font-size:13px;min-height:64px}
+.ans .q{font-weight:600;margin-bottom:4px}
+.insights{display:grid;gap:8px;margin-top:14px;padding-top:14px;border-top:1px solid var(--line2)}
+.ins{display:flex;gap:10px;font-size:13px}
+.ins .dot{flex:none;width:8px;height:8px;border-radius:50%;margin-top:6px}
+/* tables */
+.tw{overflow-x:auto;margin:0 -16px;padding:0 16px}
+table{width:100%;border-collapse:collapse;min-width:640px}
+th{font:500 11px var(--mono);color:var(--muted);text-align:left;padding:8px 10px;border-bottom:1px solid var(--line)}
+td{padding:10px;border-bottom:1px solid var(--line2);vertical-align:middle}
+tr:last-child td{border-bottom:0}
+td.r,th.r{text-align:right}
+.sku{font-family:var(--mono);font-size:12px;color:var(--muted)}
+.pill{display:inline-block;font-size:11px;font-weight:600;padding:3px 8px;border-radius:999px}
+.pill.ok{background:var(--ok-bg);color:var(--ok)}
+.pill.low{background:var(--warn-bg);color:var(--warn)}
+.pill.out{background:var(--bad-bg);color:var(--bad)}
+.lv{display:flex;align-items:center;gap:8px;min-width:110px}
+.lv .bar{flex:1;height:6px}
+.filters{display:flex;flex-wrap:wrap;gap:8px;margin-bottom:12px}
+.filters input{flex:1 1 200px}
+.foot{color:var(--muted);font-size:12px;margin-top:20px}
+@media(prefers-reduced-motion:reduce){*{transition:none!important}}
+.tag.live{color:var(--ok);background:var(--ok-bg)}
+.right{flex-wrap:wrap}
+.iconbtn{display:inline-flex;align-items:center;gap:7px;background:var(--surface);border:1px solid var(--line);border-radius:999px;padding:6px 12px;font-size:12px;font-weight:600;color:var(--ink);cursor:pointer}
+.iconbtn:hover{border-color:var(--s1)}
+.tabs{display:flex;gap:4px;margin-top:14px;border-bottom:1px solid var(--line);overflow-x:auto}
+.tabs button{background:none;border:0;border-bottom:2px solid transparent;padding:10px 14px;font-weight:600;font-size:14px;color:var(--ink2);cursor:pointer;white-space:nowrap;margin-bottom:-1px}
+.tabs button[aria-selected="true"]{color:var(--ink);border-bottom-color:var(--s1)}
+.tabs button:focus-visible{outline:2px solid var(--s1);outline-offset:-2px}
+.tabs .badge{display:inline-block;min-width:18px;text-align:center;margin-left:6px;font:600 11px var(--mono);padding:1px 6px;border-radius:999px;background:var(--bad-bg);color:var(--bad)}
+.seg{display:inline-flex;border:1px solid var(--line);border-radius:7px;overflow:hidden}
+.seg button{background:transparent;border:0;padding:5px 10px;font-size:12px;font-weight:600;color:var(--ink2);cursor:pointer}
+.seg button[aria-pressed="true"]{background:var(--brand);color:var(--brand-ink)}
+.health{display:flex;height:14px;border-radius:4px;overflow:hidden;gap:2px;margin:6px 0 10px}
+.health span{display:block;height:100%}
+.hlegend{display:flex;flex-wrap:wrap;gap:6px 18px;font-size:13px;color:var(--ink2)}
+.hlegend b{color:var(--ink);font-variant-numeric:tabular-nums}
+.hlegend i{display:inline-block;width:10px;height:10px;border-radius:2px;margin-right:6px}
+.movers{display:grid;gap:10px}
+.mv{display:grid;grid-template-columns:minmax(0,1.1fr) minmax(0,1.4fr) 62px;gap:10px;align-items:center;font-size:13px}
+.mv .nm{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.trend{font:600 11px var(--mono);text-align:right}
+.trend.up{color:var(--ok)}.trend.down{color:var(--bad)}.trend.flat{color:var(--muted)}
+th button{background:none;border:0;padding:0;font:inherit;letter-spacing:inherit;text-transform:inherit;color:inherit;cursor:pointer;display:inline-flex;gap:4px;align-items:center}
+th button:hover{color:var(--ink)}
+th[aria-sort] button{color:var(--ink)}
+tr.click{cursor:pointer}
+tr.click:hover td{background:var(--line2)}
+tr.click:focus-visible{outline:2px solid var(--s1);outline-offset:-2px}
+input[type=checkbox]{width:16px;height:16px;accent-color:var(--s1)}
+textarea{width:100%;min-height:150px;background:var(--bg);border:1px solid var(--line);border-radius:8px;padding:10px 12px;font:13px/1.5 var(--mono);color:var(--ink);resize:vertical}
+textarea:focus-visible{outline:2px solid var(--s1);outline-offset:2px}
+.acts{display:grid}
+.login{max-width:380px;margin:12vh auto 0;background:var(--card);border:1px solid var(--line);border-radius:14px;padding:28px;display:flex;flex-direction:column;gap:14px}
+.login[hidden],.wrap[hidden]{display:none}
+.login label{font-size:12px;color:var(--muted);display:block;margin-bottom:4px}
+.login input{width:100%}
+.err{color:var(--bad);font-size:13px;min-height:18px}
+.ok{color:var(--ok);font-size:13px}
+.efrm{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px;border-top:1px solid var(--line2);padding-top:14px}
+.efrm[hidden]{display:none}
+.efrm .full{grid-column:1/-1}
+.efrm label{font-size:12px;color:var(--muted);display:block;margin-bottom:4px}
+.efrm input,.efrm select{width:100%}
+.convo{display:grid;grid-template-columns:260px minmax(0,1fr);gap:16px;margin-top:8px}
+.cl{display:flex;flex-direction:column;border:1px solid var(--line2);border-radius:10px;overflow:hidden;align-self:start}
+.cl button{all:unset;box-sizing:border-box;cursor:pointer;padding:12px 14px;border-bottom:1px solid var(--line2);display:flex;flex-direction:column;gap:2px}
+.cl button:last-child{border-bottom:0}
+.cl button[aria-pressed="true"]{background:var(--brand);color:var(--brand-ink)}
+.cl button:focus-visible{outline:2px solid var(--s2);outline-offset:-2px}
+.cl .who{font:600 13px var(--mono)}
+.cl .meta{font-size:12px;opacity:.75}
+.thread{border:1px solid var(--line2);border-radius:10px;padding:14px;display:flex;flex-direction:column;gap:8px;max-height:520px;overflow:auto}
+.msg{max-width:78%;padding:8px 12px;border-radius:12px;font-size:13px;line-height:1.45;white-space:pre-wrap;word-break:break-word}
+.msg.in{align-self:flex-start;background:var(--line2);color:var(--ink)}
+.msg.out{align-self:flex-end;background:var(--brand);color:var(--brand-ink)}
+.msg .t{display:block;font-size:11px;opacity:.7;margin-top:3px}
+@media(max-width:700px){.convo{grid-template-columns:minmax(0,1fr)}}
+.act{display:grid;grid-template-columns:96px 74px minmax(0,1fr) auto;gap:10px;align-items:baseline;padding:10px 0;border-bottom:1px solid var(--line2);font-size:13px}
+.act:last-child{border-bottom:0}
+.act .tm{font:12px var(--mono);color:var(--muted)}
+.act .nt{color:var(--muted);font-size:12px}
+.act .ch{font:600 13px var(--mono);text-align:right}
+.pill.sold{background:color-mix(in srgb,var(--s2) 16%,transparent);color:var(--s2)}
+.pill.add{background:var(--ok-bg);color:var(--ok)}
+.pill.adj{background:var(--warn-bg);color:var(--warn)}
+.pill.rem{background:var(--bad-bg);color:var(--bad)}
+@media(max-width:620px){.act{grid-template-columns:70px minmax(0,1fr) auto}.act .pl{grid-column:2;grid-row:1}.act .ds{grid-column:1/-1}.mv{grid-template-columns:minmax(0,1fr) 62px}.mv .bar{grid-column:1/-1;order:3}}
+.drawer[hidden],.scrim[hidden]{display:none}
+.scrim{position:fixed;inset:0;background:rgba(5,12,24,.45);z-index:20}
+.drawer{position:fixed;top:0;right:0;bottom:0;width:min(420px,100%);background:var(--surface);border-left:1px solid var(--line);z-index:21;padding:20px 20px calc(20px + env(safe-area-inset-bottom,0px));padding-top:calc(20px + env(safe-area-inset-top,0px));overflow-y:auto;display:flex;flex-direction:column;gap:16px}
+.drawer h3{font-size:18px;font-weight:700;letter-spacing:-.01em}
+.dgrid{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.dgrid div{background:var(--bg);border-radius:8px;padding:10px 12px}
+.dgrid .l{font:500 10px var(--mono);color:var(--muted)}
+.dgrid .v{font-size:18px;font-weight:700;margin-top:2px;font-variant-numeric:tabular-nums}
+.x{margin-left:auto;background:none;border:1px solid var(--line);border-radius:7px;width:32px;height:32px;cursor:pointer;color:var(--ink)}
+.x:focus-visible{outline:2px solid var(--s1);outline-offset:2px}
+.sec-t{font:500 11px var(--mono);color:var(--muted)}
+.note{font-size:12px;color:var(--muted)}
+</style>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Figtree:wght@400;500;600;700;800&display=swap">
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.min.js"></script>
+
+<div class="login" id="login" hidden>
+  <div class="brand"><div><h1>Stock<span>Flow</span></h1><div class="biz">Sign in to your dashboard</div></div></div>
+  <form id="loginform" style="display:flex;flex-direction:column;gap:12px">
+    <div><label for="lemail">Email</label><input type="email" id="lemail" autocomplete="username" required></div>
+    <div><label for="lpass">Password</label><input type="password" id="lpass" autocomplete="current-password" required></div>
+    <div class="err" id="lerr" role="alert"></div>
+    <button class="btn" type="submit">Sign in</button>
+  </form>
+</div>
+<div class="wrap" id="app">
+  <header class="top">
+    <div class="brand">
+      <img class="logo" alt="" src="data:image/png;base64,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">
+      <div><h1>Stock<span>Flow</span></h1><div class="biz" id="biz">Sample business</div></div>
+    </div>
+    <div class="right">
+      <span class="tag" id="tag">Sample data</span>
+      <button class="iconbtn" id="refresh" type="button" hidden>Refresh</button>
+      <button class="iconbtn" id="signout" type="button" hidden>Sign out</button>
+      <button class="theme" id="theme" type="button" aria-label="Switch theme"><svg id="ti" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"></svg><span id="tl"></span></button>
+    </div>
+  </header>
+
+  <nav class="tabs" role="tablist" aria-label="Sections" id="tabs">
+    <button role="tab" id="t-overview" aria-selected="true" aria-controls="p-overview" data-tab="overview">Overview</button>
+    <button role="tab" id="t-inventory" aria-selected="false" aria-controls="p-inventory" data-tab="inventory">Inventory</button>
+    <button role="tab" id="t-reorder" aria-selected="false" aria-controls="p-reorder" data-tab="reorder">Reorder<span class="badge" id="rbadge" hidden></span></button>
+    <button role="tab" id="t-activity" aria-selected="false" aria-controls="p-activity" data-tab="activity">Activity</button>
+    <button role="tab" id="t-conversations" aria-selected="false" aria-controls="p-conversations" data-tab="conversations">Conversations</button>
+    <button role="tab" id="t-assistant" aria-selected="false" aria-controls="p-assistant" data-tab="assistant">Assistant</button>
+  </nav>
+
+  <!-- OVERVIEW -->
+  <div id="p-overview" role="tabpanel" aria-labelledby="t-overview">
+    <section class="grid kpis" id="kpis" aria-label="Summary"></section>
+
+    <section class="card" style="margin-top:16px">
+      <div class="hd"><h2>Stock health</h2><div class="sub" id="healthsub"></div></div>
+      <div class="health" id="healthbar" role="img" aria-label="Share of items that are OK, low or out of stock"></div>
+      <div class="hlegend" id="hlegend"></div>
+    </section>
+
+    <section class="grid two">
+      <div class="card">
+        <div class="hd">
+          <div><h2 id="chartTitle">Sold vs restocked</h2><div class="sub">Units per week, from the Audit Log</div></div>
+          <div style="display:flex;flex-wrap:wrap;gap:12px;align-items:center">
+            <div class="legend"><span><i style="background:var(--s2)"></i><span id="lgSold">Sold</span></span><span><i style="background:var(--s1)"></i>Restocked</span></div>
+            <div class="seg" role="group" aria-label="Time range"><button type="button" data-range="4" aria-pressed="false">4 weeks</button><button type="button" data-range="8" aria-pressed="true">8 weeks</button></div>
+          </div>
+        </div>
+        <div class="chart" id="chart"></div>
+      </div>
+
+      <aside class="card ai">
+        <div class="ai-h"><h2>Ask your stock</h2><span class="chip">AI</span></div>
+        <p style="color:var(--muted);font-size:12px">Ask in plain English. With n8n connected, answers come from your live Airtable stock.</p>
+        <form class="askrow" id="askform">
+          <input type="text" id="q" placeholder="What sold most this month?" aria-label="Ask a question about your stock" autocomplete="off">
+          <button class="btn" type="submit">Ask</button>
+        </form>
+        <div class="sugg" id="sugg"></div>
+        <div class="ans" id="ans" aria-live="polite"></div>
+        <div class="insights" id="ins"></div>
+      </aside>
+    </section>
+
+    <section class="grid two">
+      <div class="card">
+        <div class="hd"><div><h2>Top movers</h2><div class="sub">Units sold in the last 30 days, change vs the 30 days before</div></div></div>
+        <div class="movers" id="movers"></div>
+      </div>
+      <div class="card">
+        <div class="hd"><div><h2>By location</h2><div class="sub">Units on hand</div></div></div>
+        <div class="loc" id="loc" style="margin:0;padding:0;border:0"></div>
+      </div>
+    </section>
+  </div>
+
+  <!-- INVENTORY -->
+  <div id="p-inventory" role="tabpanel" aria-labelledby="t-inventory" hidden>
+    <section class="card" style="margin-top:16px">
+      <div class="hd"><div><h2>All inventory</h2><div class="sub" id="count"></div></div></div>
+      <div class="filters">
+        <input type="search" id="search" placeholder="Search item or SKU" aria-label="Search item or SKU">
+        <select id="floc" aria-label="Location"><option value="">All locations</option></select>
+        <select id="fst" aria-label="Status"><option value="">All status</option><option value="low">Low</option><option value="out">Out</option><option value="ok">OK</option></select>
+        <button class="btn ghost" id="copy" type="button">Copy as CSV</button>
+        <button class="btn" id="additem" type="button" hidden>Add item</button>
+      </div>
+      <form class="efrm" id="addform" hidden style="margin:0 0 14px">
+        <div><label for="a-name">Item name</label><input type="text" id="a-name" required></div>
+        <div><label for="a-sku">Item code (SKU)</label><input type="text" id="a-sku" placeholder="Leave blank to generate"></div>
+        <div><label for="a-qty">Starting quantity</label><input type="number" id="a-qty" min="0" value="0" required></div>
+        <div><label for="a-unit">Unit</label><input type="text" id="a-unit" placeholder="bags, cartons, pcs"></div>
+        <div><label for="a-loc">Location</label><input type="text" id="a-loc"></div>
+        <div><label for="a-thr">Reorder at</label><input type="number" id="a-thr" min="0"></div>
+        <div class="full err" id="a-err" role="alert"></div>
+        <div class="full" style="display:flex;gap:8px"><button class="btn" type="submit">Save item</button><button class="btn ghost" type="button" id="a-cancel">Cancel</button></div>
+      </form>
+      <div class="tw"><table id="invtable"><thead><tr id="invhead"></tr></thead><tbody id="rows"></tbody></table></div>
+      <p class="note" style="margin-top:10px">Click a row for details.</p>
+    </section>
+  </div>
+
+  <!-- REORDER -->
+  <div id="p-reorder" role="tabpanel" aria-labelledby="t-reorder" hidden>
+    <section class="card" style="margin-top:16px">
+      <div class="hd"><div><h2>Reorder now</h2><div class="sub">Items at or below their reorder level, most urgent first. Tick the ones to order.</div></div></div>
+      <div class="tw"><table><thead><tr><th style="width:36px"><input type="checkbox" id="selall" aria-label="Select all"></th><th>Item</th><th>Location</th><th class="r">In stock</th><th class="r">Reorder at</th><th class="r">Days left</th><th class="r">Suggested order</th></tr></thead><tbody id="reorder"></tbody></table></div>
+    </section>
+    <section class="card" style="margin-top:16px">
+      <div class="hd"><div><h2>Order message</h2><div class="sub">Edit it, then copy and send to your supplier</div></div><button class="btn" id="copypo" type="button">Copy message</button></div>
+      <label for="po" class="note" style="display:block;margin-bottom:6px">Message</label>
+      <textarea id="po"></textarea>
+    </section>
+  </div>
+
+  <!-- ACTIVITY -->
+  <div id="p-activity" role="tabpanel" aria-labelledby="t-activity" hidden>
+    <section class="card" style="margin-top:16px">
+      <div class="hd"><div><h2>Recent activity</h2><div class="sub">Latest Audit Log entries from WhatsApp and imports</div></div>
+        <select id="fact" aria-label="Filter by action"><option value="">All actions</option><option>Sold</option><option>Add</option><option>Remove</option><option>Adjustment</option></select></div>
+      <div class="acts" id="acts"></div>
+    </section>
+  </div>
+
+  <!-- CONVERSATIONS -->
+  <div id="p-conversations" role="tabpanel" aria-labelledby="t-conversations" hidden>
+    <section class="card" style="margin-top:16px">
+      <div class="hd"><div><h2>WhatsApp conversations</h2><div class="sub">Messages between your team and the bot, last 14 days</div></div></div>
+      <div class="convo"><div class="cl" id="clist"></div><div class="thread" id="thread" aria-live="polite"></div></div>
+    </section>
+  </div>
+
+  <!-- ASSISTANT -->
+  <div id="p-assistant" role="tabpanel" aria-labelledby="t-assistant" hidden>
+    <section class="card" style="margin-top:16px">
+      <div class="hd"><div><h2>Assistant</h2><div class="sub">The same assistant your team uses on WhatsApp. It can look up stock and update it.</div></div></div>
+      <div class="thread" id="chatlog" aria-live="polite" style="min-height:240px"></div>
+      <form class="askrow" id="chatform" style="margin-top:12px">
+        <input type="text" id="chatq" placeholder="e.g. sold 3 rice, or how many detergent do we have?" aria-label="Message the assistant" autocomplete="off">
+        <button class="btn" type="submit" id="chatsend">Send</button>
+      </form>
+    </section>
+  </div>
+
+  <p class="foot" id="foot"></p>
+</div>
+
+<div class="scrim" id="scrim" hidden></div>
+<aside class="drawer" id="drawer" role="dialog" aria-modal="true" aria-labelledby="dname" hidden>
+  <div style="display:flex;align-items:flex-start;gap:10px"><div style="min-width:0"><h3 id="dname"></h3><div class="sku" id="dsku"></div></div><button class="x" id="dclose" type="button" aria-label="Close details">&#x2715;</button></div>
+  <div id="dbody" style="display:flex;flex-direction:column;gap:16px"></div>
+</aside>
+
+<script>
+// ===== SETTINGS: fill these in to go live. Leave url empty to show sample data. =====
+var CONFIG={
+  url:"https://uzoo.app.n8n.cloud/webhook/stockflow",          // your n8n address, e.g. "https://uzoo.app.n8n.cloud/webhook/stockflow"
+  supabaseUrl:"https://nxqlujwqavqpvliccmdc.supabase.co",  // Supabase > Project Settings > API > Project URL
+  supabaseKey:"eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im54cWx1andxYXZxcHZsaWNjbWRjIiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTE4ODAzMDQsImV4cCI6MjEwNzQ1NjMwNH0.niE9DzY6bOQ9L6jNBGpLO7EOEjJu8Kr5UiRbDOHAcVY",  // Supabase anon (public) key. Safe to put here.
+  business:""      // optional: shown in the header until your business loads
+};
+
+// ---- sample data shaped like the Airtable Inventory + Audit Log tables ----
+var SAMPLE_INV=[
+ ["Rice 50kg","RIC-050",120,"bags","Warehouse",40,"2026-10-02",64,52],
+ ["Indomie Carton (40 pcs)","IND-040",85,"cartons","Warehouse",60,"2026-09-28",110,98],
+ ["Vegetable Oil 25L","OIL-025",14,"kegs","Main Store",20,"2026-09-14",30,19],
+ ["Granulated Sugar 50kg","SUG-050",48,"bags","Warehouse",25,"2026-09-30",22,24],
+ ["Tomato Paste (box of 70)","TOM-070",9,"boxes","Main Store",15,"2026-09-20",13,10],
+ ["Bottled Water (pack of 12)","WTR-012",0,"packs","Main Store",50,"2026-08-29",95,80],
+ ["Detergent 1kg","DET-001",160,"pcs","Main Store",80,"2026-10-05",58,55],
+ ["Bathing Soap (carton)","SOP-024",36,"cartons","Warehouse",20,"2026-09-22",14,15],
+ ["Toothpaste (pack of 12)","TTP-012",22,"packs","Main Store",20,"2026-10-01",16,15],
+ ["Spaghetti (carton)","SPG-020",40,"cartons","Warehouse",20,"2026-09-18",9,12],
+ ["Groundnut Oil 5L","GNO-005",31,"pcs","Main Store",25,"2026-09-25",21,19],
+ ["Milk Powder 400g","MLK-400",70,"tins","Main Store",30,"2026-10-03",26,30],
+ ["Cornflakes 500g","CRN-500",44,"boxes","Warehouse",20,"2026-09-26",8,9],
+ ["Salt 1kg","SLT-001",210,"packs","Warehouse",100,"2026-10-06",60,66]
+].map(function(a){return{name:a[0],sku:a[1],qty:a[2],unit:a[3],loc:a[4],thr:a[5],last:a[6],s30:a[7],sp:a[8]}});
+var SAMPLE_WEEKS=[["Aug 17",310,520],["Aug 24",345,260],["Aug 31",298,610],["Sep 7",402,180],["Sep 14",380,540],["Sep 21",431,300],["Sep 28",455,420],["Oct 5",498,350]];
+var SAMPLE_ACT=[
+ ["2026-10-10T09:41:00","Bottled Water (pack of 12)","WTR-012","Sold",-12,"+234 803 555 0142","Sold to walk-in customer"],
+ ["2026-10-10T08:15:00","Vegetable Oil 25L","OIL-025","Sold",-3,"+234 803 555 0142",""],
+ ["2026-10-09T17:30:00","Salt 1kg","SLT-001","Add",60,"+234 806 555 0188","Delivery from supplier"],
+ ["2026-10-09T15:02:00","Indomie Carton (40 pcs)","IND-040","Sold",-9,"+234 803 555 0142",""],
+ ["2026-10-09T11:20:00","Tomato Paste (box of 70)","TOM-070","Remove",-1,"+234 806 555 0188","Damaged box"],
+ ["2026-10-08T16:44:00","Rice 50kg","RIC-050","Sold",-6,"+234 803 555 0142",""],
+ ["2026-10-08T10:05:00","Detergent 1kg","DET-001","Adjustment",4,"+234 806 555 0188","Stock count correction"],
+ ["2026-10-07T14:18:00","Milk Powder 400g","MLK-400","Sold",-5,"+234 803 555 0142",""],
+ ["2026-10-06T09:30:00","Salt 1kg","SLT-001","Sold",-14,"+234 803 555 0142",""],
+ ["2026-10-06T08:10:00","Rice 50kg","RIC-050","Add",50,"+234 806 555 0188","Restock from import"],
+ ["2026-10-05T13:22:00","Detergent 1kg","DET-001","Add",100,"+234 806 555 0188","Delivery from supplier"],
+ ["2026-10-04T12:00:00","Bottled Water (pack of 12)","WTR-012","Sold",-20,"+234 803 555 0142","Event order"]
+].map(function(a){return{time:a[0],item:a[1],sku:a[2],action:a[3],change:a[4],sender:a[5],notes:a[6]}});
+
+var SAMPLE_THREADS=[
+ {sender:"+234 803 555 0142",count:4,last:"2026-10-10T09:41:00",messages:[
+  {dir:"in",text:"sold 12 bottled water",time:"2026-10-10T09:40:00"},
+  {dir:"out",text:"Done! \u2705 Sold 12 Bottled Water (pack of 12) \u2014 0 left. Heads up, that's below your reorder level of 50 \ud83d\udce6",time:"2026-10-10T09:41:00"},
+  {dir:"in",text:"how many rice do we have",time:"2026-10-10T11:02:00"},
+  {dir:"out",text:"You have 120 bags of Rice 50kg in the Warehouse \ud83d\udc4d",time:"2026-10-10T11:02:00"}]},
+ {sender:"+234 806 555 0188",count:2,last:"2026-10-09T17:30:00",messages:[
+  {dir:"in",text:"added 60 salt, delivery from supplier",time:"2026-10-09T17:29:00"},
+  {dir:"out",text:"Added 60 \u2014 now 210 Salt 1kg in stock \u2705",time:"2026-10-09T17:30:00"}]}
+];
+
+// ---- state ----
+var threads=SAMPLE_THREADS, curThread=0, inv=SAMPLE_INV, weeks=[], sold=[], rest=[], act=SAMPLE_ACT, live=false;
+var range=8, sortKey="status", sortDir=1, picked={}, openSku=null, lastFocus=null, curTab="overview";
+var LOCCOL=["var(--s1)","var(--s2)","var(--s3)"];
+function setWeeks(a){weeks=a.map(function(x){return x[0]});sold=a.map(function(x){return x[1]});rest=a.map(function(x){return x[2]})}
+setWeeks(SAMPLE_WEEKS);
+
+// ---- helpers ----
+function el(id){return document.getElementById(id)}
+function esc(s){return String(s==null?"":s).replace(/[&<>"]/g,function(c){return{"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]})}
+function fmt(n){return Number(n).toLocaleString("en-NG")}
+function status(i){return i.qty<=0?"out":i.qty<=i.thr?"low":"ok"}
+var RANK={out:0,low:1,ok:2};
+function daysLeft(i){var r=i.s30/30;return r>0?Math.floor(i.qty/r):null}
+function sug(i){return Math.max(0,Math.ceil((i.s30-i.qty+i.thr)/10)*10)}
+function trend(i){return i.sp>0?Math.round((i.s30-i.sp)/i.sp*100):null}
+function dt(s){if(!s)return "n/a";var d=new Date(String(s).slice(0,10)+"T00:00:00");return isNaN(d)?"n/a":d.toLocaleDateString("en-GB",{day:"numeric",month:"short"})}
+function locs(){var ks=[];inv.forEach(function(i){if(ks.indexOf(i.loc)<0)ks.push(i.loc)});return ks.sort()}
+function colFor(k){return LOCCOL[Math.min(locs().indexOf(k),2)]}
+function pillFor(st){return '<span class="pill '+st+'">'+({ok:"OK",low:"Low",out:"Out"})[st]+'</span>'}
+function trendHtml(i){var t=trend(i);if(t===null)return '<span class="trend flat">new</span>';return '<span class="trend '+(t>5?"up":t<-5?"down":"flat")+'">'+(t>0?"+":"")+t+'%</span>'}
+var sb=null, me={email:"",role:"owner"}, canEdit=true;
+function callN8n(body){
+  var tok=sb?sb.auth.getSession().then(function(r){return r.data&&r.data.session?r.data.session.access_token:""}):Promise.resolve("");
+  return tok.then(function(t){
+    return fetch(CONFIG.url,{method:"POST",headers:{"Content-Type":"application/json","Authorization":"Bearer "+t},body:JSON.stringify(body)});
+  }).then(function(r){
+    return r.json().catch(function(){return {}}).then(function(j){
+      if(!r.ok){var e=new Error(j.error||("HTTP "+r.status));e.status=r.status;throw e}
+      return j;
+    });
+  });
+}
+
+// ---- Overview ----
+function renderKpis(){
+  var low=inv.filter(function(i){return status(i)==="low"}).length, out=inv.filter(function(i){return status(i)==="out"}).length;
+  var s=sold.slice(-4).reduce(function(a,b){return a+b},0), p=sold.slice(-8,-4).reduce(function(a,b){return a+b},0);
+  var chg=p>0?Math.round((s-p)/p*100):null;
+  var k=[["Items tracked",inv.length,"across "+locs().length+" locations",""],["Units in stock",fmt(inv.reduce(function(a,i){return a+i.qty},0)),"all units combined",""],
+         ["Low or out",low+out,low+" low · "+out+" out of stock",low+out?"alert":""],["Sold, last 4 weeks",fmt(s),chg===null?"units from Audit Log":(chg>0?"+":"")+chg+"% vs the 4 weeks before",""]];
+  el("kpis").innerHTML=k.map(function(x){return '<div class="card kpi '+x[3]+'"><div class="l">'+x[0]+'</div><div class="v">'+x[1]+'</div><div class="n">'+x[2]+'</div></div>'}).join("");
+}
+function renderHealth(){
+  var c={ok:0,low:0,out:0};inv.forEach(function(i){c[status(i)]++});var n=Math.max(1,inv.length);
+  var col={ok:"var(--ok)",low:"var(--warn)",out:"var(--bad)"},lab={ok:"OK",low:"Low",out:"Out of stock"};
+  el("healthbar").innerHTML=["ok","low","out"].filter(function(k){return c[k]>0}).map(function(k){return '<span style="width:'+(c[k]/n*100)+'%;background:'+col[k]+'"></span>'}).join("");
+  el("hlegend").innerHTML=["ok","low","out"].map(function(k){return '<span><i style="background:'+col[k]+'"></i>'+lab[k]+' <b>'+c[k]+'</b></span>'}).join("");
+  el("healthsub").textContent=Math.round(c.ok/n*100)+"% of items are above their reorder level";
+}
+var cw=[],cs=[],cr=[];
+function renderChart(){
+  cw=weeks.slice(-range);cs=sold.slice(-range);cr=rest.slice(-range);
+  var W=640,H=230,L=44,R=8,T=10,B=28,pw=W-L-R,ph=H-T-B,g=pw/Math.max(1,cw.length),bw=Math.min(24,g/2-4);
+  var mx=Math.max.apply(null,cs.concat(cr).concat([4])),step=Math.pow(10,Math.floor(Math.log10(mx)))/2;
+  var max=Math.ceil(mx/(step*4))*step*4; if(!isFinite(max)||max<=0)max=4;
+  var y=function(v){return T+ph-(v/max)*ph}, s='<svg viewBox="0 0 '+W+' '+H+'" role="img" aria-label="Weekly units sold versus restocked">';
+  [0,.25,.5,.75,1].forEach(function(f){var t=Math.round(max*f);s+='<line x1="'+L+'" x2="'+(W-R)+'" y1="'+y(t)+'" y2="'+y(t)+'" stroke="var(--line)" stroke-width="1"/><text x="'+(L-6)+'" y="'+(y(t)+4)+'" text-anchor="end">'+t+'</text>'});
+  cw.forEach(function(w,i){
+    var cx=L+g*i+g/2;
+    s+='<rect x="'+(cx-bw-1)+'" y="'+y(cs[i])+'" width="'+bw+'" height="'+(T+ph-y(cs[i]))+'" rx="3" fill="var(--s2)"/>';
+    s+='<rect x="'+(cx+1)+'" y="'+y(cr[i])+'" width="'+bw+'" height="'+(T+ph-y(cr[i]))+'" rx="3" fill="var(--s1)"/>';
+    s+='<text x="'+cx+'" y="'+(H-8)+'" text-anchor="middle">'+esc(w)+'</text>';
+    s+='<rect class="hit" data-i="'+i+'" x="'+(cx-g/2)+'" y="'+T+'" width="'+g+'" height="'+ph+'" fill="transparent"/>';
+  });
+  el("chart").innerHTML=s+'</svg><div class="tip" id="tip"></div>';
+}
+(function(){
+  var c=el("chart");
+  c.addEventListener("pointermove",function(e){
+    var t=e.target,tip=el("tip");if(!tip)return;
+    if(!t.classList||!t.classList.contains("hit")){tip.style.opacity=0;return}
+    var i=+t.getAttribute("data-i"),r=c.getBoundingClientRect(),b=t.getBoundingClientRect();
+    tip.innerHTML='Week of '+esc(cw[i])+'<br>Sold <b>'+cs[i]+'</b> · Restocked <b>'+cr[i]+'</b>';
+    tip.style.left=(b.left-r.left+b.width/2)+"px";tip.style.top=Math.max(40,(e.clientY-r.top)-10)+"px";tip.style.opacity=1;
+  });
+  c.addEventListener("pointerleave",function(){var tip=el("tip");if(tip)tip.style.opacity=0});
+  document.querySelectorAll("[data-range]").forEach(function(b){b.addEventListener("click",function(){
+    range=+b.getAttribute("data-range");document.querySelectorAll("[data-range]").forEach(function(x){x.setAttribute("aria-pressed",x===b?"true":"false")});renderChart();
+  })});
+})();
+function renderMovers(){
+  var t=inv.slice().sort(function(a,b){return b.s30-a.s30}).slice(0,6),mx=Math.max.apply(null,t.map(function(i){return i.s30}).concat([1]));
+  el("movers").innerHTML=t.map(function(i){return '<div class="mv"><span class="nm" title="'+esc(i.name)+'">'+esc(i.name)+'</span><div class="bar"><span style="width:'+(i.s30/mx*100)+'%;background:var(--s2)"></span></div><span style="display:flex;flex-direction:column;align-items:flex-end"><span class="num">'+fmt(i.s30)+'</span>'+trendHtml(i)+'</span></div>'}).join("");
+}
+function renderLoc(){
+  var by={};inv.forEach(function(i){by[i.loc]=by[i.loc]||{q:0,low:0};by[i.loc].q+=i.qty;if(status(i)!=="ok")by[i.loc].low++});
+  var ks=Object.keys(by).sort(),mx=Math.max.apply(null,ks.map(function(k){return by[k].q}).concat([1]));
+  el("loc").innerHTML=ks.map(function(k){return '<div class="row"><span>'+esc(k)+'</span><div class="bar"><span style="width:'+(by[k].q/mx*100)+'%;background:'+colFor(k)+'"></span></div><span class="num">'+fmt(by[k].q)+' units · '+by[k].low+' need attention</span></div>'}).join("");
+}
+
+// ---- Inventory (sortable) ----
+var COLS=[["name","Item",""],["sku","SKU",""],["loc","Location",""],["status","Stock level",""],["qty","Qty","r"],["trend","30-day sales","r"],["last","Last restocked",""]];
+function sortVal(i,k){return k==="status"?RANK[status(i)]*1e6+i.qty/Math.max(1,i.thr):k==="trend"?(trend(i)===null?-1e9:trend(i)):k==="last"?(i.last||""):i[k]}
+function renderHead(){
+  el("invhead").innerHTML=COLS.map(function(c){
+    var on=sortKey===c[0];
+    return '<th class="'+c[2]+'"'+(on?' aria-sort="'+(sortDir>0?"ascending":"descending")+'"':'')+'><button type="button" data-sort="'+c[0]+'">'+c[1]+(on?(sortDir>0?" ↑":" ↓"):"")+'</button></th>'}).join("")+'<th>Status</th>';
+}
+function rowsData(){
+  var q=el("search").value.toLowerCase(),l=el("floc").value,s=el("fst").value;
+  return inv.filter(function(i){return (!q||(i.name+" "+i.sku).toLowerCase().indexOf(q)>-1)&&(!l||i.loc===l)&&(!s||status(i)===s)})
+    .sort(function(a,b){var x=sortVal(a,sortKey),y=sortVal(b,sortKey);return (x<y?-1:x>y?1:0)*sortDir});
+}
+function renderTable(){
+  renderHead();
+  var d=rowsData();
+  el("count").textContent=d.length+" of "+inv.length+" items";
+  el("rows").innerHTML=d.length?d.map(function(i){
+    var st=status(i),pct=Math.min(100,i.qty/Math.max(1,i.thr*2)*100),c=st==="ok"?"var(--ok)":st==="low"?"var(--warn)":"var(--bad)";
+    return '<tr class="click" tabindex="0" data-sku="'+esc(i.sku)+'"><td><b>'+esc(i.name)+'</b></td><td class="sku">'+esc(i.sku)+'</td><td>'+esc(i.loc)+'</td><td><div class="lv"><div class="bar"><span style="width:'+pct+'%;background:'+c+'"></span></div></div></td><td class="r num">'+fmt(i.qty)+' '+esc(i.unit)+'</td><td class="r"><span class="num">'+fmt(i.s30)+'</span> '+trendHtml(i)+'</td><td class="num">'+dt(i.last)+'</td><td>'+pillFor(st)+'</td></tr>'}).join(""):'<tr><td colspan="8" style="color:var(--muted);padding:24px 10px">No items match. Clear the search or filters.</td></tr>';
+}
+function fillLocs(){var s=el("floc"),cur=s.value,ks=locs();s.innerHTML='<option value="">All locations</option>'+ks.map(function(k){return "<option>"+esc(k)+"</option>"}).join("");if(ks.indexOf(cur)>-1)s.value=cur}
+el("invhead").addEventListener("click",function(e){var b=e.target.closest("[data-sort]");if(!b)return;var k=b.getAttribute("data-sort");if(sortKey===k)sortDir=-sortDir;else{sortKey=k;sortDir=(k==="qty"||k==="trend"||k==="last")?-1:1}renderTable()});
+["search","floc","fst"].forEach(function(id){el(id).addEventListener("input",renderTable)});
+el("rows").addEventListener("click",function(e){var tr=e.target.closest("tr[data-sku]");if(tr)openDrawer(tr.getAttribute("data-sku"),tr)});
+el("rows").addEventListener("keydown",function(e){if(e.key==="Enter"||e.key===" "){var tr=e.target.closest("tr[data-sku]");if(tr){e.preventDefault();openDrawer(tr.getAttribute("data-sku"),tr)}}});
+el("copy").addEventListener("click",function(){
+  var b=this,csv="Item Name,SKU,Quantity,Unit,Location,Reorder Threshold,Last Restocked\n"+rowsData().map(function(i){return [i.name,i.sku,i.qty,i.unit,i.loc,i.thr,i.last].join(",")}).join("\n");
+  flash(b,"Copy as CSV",csv);
+});
+function flash(b,label,text){
+  function done(m){b.textContent=m;setTimeout(function(){b.textContent=label},1600)}
+  try{navigator.clipboard.writeText(text).then(function(){done("Copied")},function(){done("Copy blocked")})}catch(e){done("Copy blocked")}
+}
+
+// ---- Reorder ----
+function reorderList(){return inv.filter(function(i){return status(i)!=="ok"}).sort(function(a,b){return (daysLeft(a)===null?999:daysLeft(a))-(daysLeft(b)===null?999:daysLeft(b))})}
+function buildPO(){
+  var l=reorderList().filter(function(i){return picked[i.sku]});
+  el("po").value=l.length?"Hello, please supply the following:\n\n"+l.map(function(i){return "- "+fmt(sug(i))+" "+i.unit+" of "+i.name}).join("\n")+"\n\nPlease confirm price and delivery date. Thank you.":"Tick items above to build your order message.";
+}
+function renderReorder(){
+  var r=reorderList();
+  var bd=el("rbadge");bd.hidden=!r.length;bd.textContent=r.length;
+  el("selall").checked=r.length>0&&r.every(function(i){return picked[i.sku]});
+  el("reorder").innerHTML=r.length?r.map(function(i){
+    var d=daysLeft(i);
+    return '<tr><td><input type="checkbox" data-pick="'+esc(i.sku)+'" aria-label="Order '+esc(i.name)+'"'+(picked[i.sku]?" checked":"")+'></td><td><b>'+esc(i.name)+'</b><div class="sku">'+esc(i.sku)+'</div></td><td>'+esc(i.loc)+'</td><td class="r num">'+fmt(i.qty)+' '+esc(i.unit)+'</td><td class="r num">'+fmt(i.thr)+'</td><td class="r">'+(d===null?'<span class="pill low">no sales</span>':'<span class="pill '+(d<=7?"out":"low")+'">'+d+' days</span>')+'</td><td class="r num">'+fmt(sug(i))+' '+esc(i.unit)+'</td></tr>'}).join(""):'<tr><td colspan="7" style="color:var(--muted);padding:24px 10px">Nothing to reorder. All items are above their reorder levels.</td></tr>';
+  buildPO();
+}
+el("reorder").addEventListener("change",function(e){var k=e.target.getAttribute("data-pick");if(k){picked[k]=e.target.checked;renderReorder()}});
+el("selall").addEventListener("change",function(){var on=this.checked;reorderList().forEach(function(i){picked[i.sku]=on});renderReorder()});
+el("copypo").addEventListener("click",function(){flash(this,"Copy message",el("po").value)});
+
+// ---- Activity ----
+function whenText(s){var d=new Date(s);if(isNaN(d))return "";var hm=d.toLocaleTimeString("en-GB",{hour:"2-digit",minute:"2-digit"});return d.toLocaleDateString("en-GB",{day:"numeric",month:"short"})+" "+hm}
+function renderAct(){
+  var f=el("fact").value,l=act.filter(function(a){return !f||a.action===f});
+  var cls={Sold:"sold",Add:"add",Adjustment:"adj",Remove:"rem"};
+  el("acts").innerHTML=l.length?l.map(function(a){
+    var c=Number(a.change)||0,who=a.sender?"…"+String(a.sender).replace(/\D/g,"").slice(-4):"";
+    return '<div class="act"><span class="tm">'+esc(whenText(a.time))+'</span><span class="pl"><span class="pill '+(cls[a.action]||"adj")+'">'+esc(a.action)+'</span></span><span class="ds"><b>'+esc(a.item)+'</b><div class="nt">'+esc(a.notes||"")+(who?(a.notes?" · ":"")+"by "+who:"")+'</div></span><span class="ch" style="color:'+(c>0?"var(--ok)":c<0?"var(--bad)":"var(--muted)")+'">'+(c>0?"+":"")+c+'</span></div>'}).join(""):'<div style="color:var(--muted);padding:20px 0">No activity for this filter.</div>';
+}
+el("fact").addEventListener("input",renderAct);
+
+// ---- Conversations ----
+function renderConvo(){
+  var l=el("clist"),t=el("thread");
+  if(!threads.length){l.innerHTML="";t.innerHTML='<div class="note">No messages yet. Messages appear here after your team uses the WhatsApp bot.</div>';return}
+  if(curThread>=threads.length)curThread=0;
+  l.innerHTML=threads.map(function(x,i){return '<button type="button" data-i="'+i+'" aria-pressed="'+(i===curThread)+'"><span class="who">'+esc(x.sender)+'</span><span class="meta">'+x.count+' message'+(x.count===1?"":"s")+' · '+esc(whenText(x.last))+'</span></button>'}).join("");
+  t.innerHTML=threads[curThread].messages.map(function(m){return '<div class="msg '+(m.dir==="out"?"out":"in")+'">'+esc(m.text)+'<span class="t">'+esc(whenText(m.time))+'</span></div>'}).join("");
+  t.scrollTop=t.scrollHeight;
+}
+el("clist").addEventListener("click",function(e){var b=e.target.closest("button[data-i]");if(b){curThread=Number(b.getAttribute("data-i"));renderConvo()}});
+
+// ---- Item drawer ----
+function openDrawer(sku,from){
+  var i=inv.filter(function(x){return x.sku===sku})[0];if(!i)return;
+  openSku=sku;lastFocus=from||document.activeElement;
+  var st=status(i),d=daysLeft(i),pct=Math.min(100,i.qty/Math.max(1,i.thr*2)*100),c=st==="ok"?"var(--ok)":st==="low"?"var(--warn)":"var(--bad)";
+  el("dname").textContent=i.name;el("dsku").textContent=i.sku+" · "+i.loc;
+  var recent=act.filter(function(a){return a.sku===sku}).slice(0,5);
+  el("dbody").innerHTML=
+   '<div style="display:flex;align-items:center;gap:10px">'+pillFor(st)+'<span class="num">'+fmt(i.qty)+' '+esc(i.unit)+' in stock</span></div>'+
+   '<div><div class="bar" style="height:10px"><span style="width:'+pct+'%;background:'+c+'"></span></div><div class="note" style="margin-top:6px">Reorder level: '+fmt(i.thr)+' '+esc(i.unit)+'</div></div>'+
+   '<div class="dgrid"><div><div class="l">Sold, 30 days</div><div class="v">'+fmt(i.s30)+'</div></div><div><div class="l">Previous 30 days</div><div class="v">'+fmt(i.sp)+'</div></div>'+
+   '<div><div class="l">Days of stock left</div><div class="v">'+(d===null?"n/a":d)+'</div></div><div><div class="l">Suggested order</div><div class="v">'+(sug(i)?fmt(sug(i)):"None")+'</div></div></div>'+
+   '<div class="note">Sales are '+(trend(i)===null?"new, no earlier period to compare.":(trend(i)>=0?"up ":"down ")+Math.abs(trend(i))+"% on the previous 30 days.")+' Last restocked '+dt(i.last)+'.</div>'+
+   '<div><div class="sec-t" style="margin-bottom:6px">Recent activity</div>'+(recent.length?recent.map(function(a){var ch=Number(a.change)||0;return '<div class="act" style="grid-template-columns:90px minmax(0,1fr) auto"><span class="tm">'+esc(whenText(a.time))+'</span><span>'+esc(a.action)+'</span><span class="ch" style="color:'+(ch>0?"var(--ok)":"var(--bad)")+'">'+(ch>0?"+":"")+ch+'</span></div>'}).join(""):'<div class="note">No recent entries.</div>')+'</div>';
+  if(canEdit)el("dbody").insertAdjacentHTML("beforeend",editHtml(i));
+  el("scrim").hidden=false;el("drawer").hidden=false;el("dclose").focus();
+}
+function closeDrawer(){
+  if(el("drawer").hidden)return;
+  el("drawer").hidden=true;el("scrim").hidden=true;openSku=null;
+  if(lastFocus&&lastFocus.focus)try{lastFocus.focus()}catch(e){}
+}
+el("dclose").addEventListener("click",closeDrawer);el("scrim").addEventListener("click",closeDrawer);
+document.addEventListener("keydown",function(e){
+  if(e.key==="Escape")closeDrawer();
+  if(e.key==="Tab"&&!el("drawer").hidden){var f=el("drawer").querySelectorAll("button,[href],input,select,textarea,[tabindex]:not([tabindex='-1'])");if(!f.length)return;var a=f[0],z=f[f.length-1];if(e.shiftKey&&document.activeElement===a){e.preventDefault();z.focus()}else if(!e.shiftKey&&document.activeElement===z){e.preventDefault();a.focus()}}
+});
+
+// ---- Tabs ----
+function showTab(n){
+  curTab=n;
+  ["overview","inventory","reorder","activity","conversations","assistant"].forEach(function(k){
+    el("p-"+k).hidden=k!==n;el("t-"+k).setAttribute("aria-selected",k===n?"true":"false");el("t-"+k).tabIndex=k===n?0:-1;
+  });
+  if(n==="overview")renderChart();
+}
+el("tabs").addEventListener("click",function(e){var b=e.target.closest("[data-tab]");if(b)showTab(b.getAttribute("data-tab"))});
+el("tabs").addEventListener("keydown",function(e){
+  var order=["overview","inventory","reorder","activity","conversations","assistant"],i=order.indexOf(curTab);
+  if(e.key==="ArrowRight")i=(i+1)%6;else if(e.key==="ArrowLeft")i=(i+5)%6;else return;
+  e.preventDefault();showTab(order[i]);el("t-"+order[i]).focus();
+});
+
+// ---- AI panel ----
+var sorted=function(k){return inv.slice().sort(function(a,b){return b[k]-a[k]})};
+var Q={
+ "What sold most this month?":function(){var t=sorted("s30").slice(0,3);return "Top sellers in the last 30 days: "+t.map(function(i){return "<b>"+esc(i.name)+"</b> ("+fmt(i.s30)+" "+esc(i.unit)+")"}).join(", ")+"."},
+ "What should I reorder this week?":function(){var r=inv.filter(function(i){var d=daysLeft(i);return status(i)!=="ok"||(d!==null&&d<=10)}).sort(function(a,b){return (daysLeft(a)===null?999:daysLeft(a))-(daysLeft(b)===null?999:daysLeft(b))});return r.length?"Reorder now: "+r.map(function(i){return "<b>"+esc(i.name)+"</b> ("+(daysLeft(i)===null?"no sales":daysLeft(i)+" days left")+")"}).join(", ")+".":"Nothing needs reordering this week."},
+ "What is out of stock?":function(){var o=inv.filter(function(i){return status(i)==="out"});return o.length?o.map(function(i){return "<b>"+esc(i.name)+"</b> at "+esc(i.loc)+" (last restocked "+dt(i.last)+")"}).join("; ")+".":"Nothing is out of stock."},
+ "Which location has the most stock?":function(){var by={};inv.forEach(function(i){by[i.loc]=(by[i.loc]||0)+i.qty});var ks=Object.keys(by).sort(function(x,y){return by[y]-by[x]});return ks.map(function(k){return "<b>"+esc(k)+"</b>: "+fmt(by[k])+" units"}).join(", ")+"."}
+};
+var sg=el("sugg"),ans=el("ans");
+sg.innerHTML=Object.keys(Q).map(function(k){return '<button type="button">'+k+'</button>'}).join("");
+function ask(text){
+  if(live){
+    ans.innerHTML='<div class="q">'+esc(text)+'</div><span style="color:var(--muted)">Thinking...</span>';
+    callN8n({mode:"ask",question:text}).then(function(r){ans.innerHTML='<div class="q">'+esc(text)+'</div>'+esc(r.answer||"No answer.").replace(/\n/g,"<br>")})
+      .catch(function(){ans.innerHTML='<div class="q">'+esc(text)+'</div>Could not reach the AI. Check the n8n workflow is active and try again.'});
+    return;
+  }
+  var key=Object.keys(Q).filter(function(k){return k.toLowerCase()===text.toLowerCase()})[0],t=text.toLowerCase();
+  if(!key){key=/sold|sell|best|top/.test(t)?"What sold most this month?":/reorder|restock|low|run out/.test(t)?"What should I reorder this week?":/out of stock|zero|finished/.test(t)?"What is out of stock?":/location|where|store|warehouse|branch/.test(t)?"Which location has the most stock?":null}
+  ans.innerHTML='<div class="q">'+esc(text)+'</div>'+(key?Q[key]():'Sample mode answers questions about top sellers, reorders, out-of-stock items and locations. Connect n8n to ask anything.');
+}
+sg.addEventListener("click",function(e){if(e.target.tagName==="BUTTON"){el("q").value=e.target.textContent;ask(e.target.textContent)}});
+el("askform").addEventListener("submit",function(e){e.preventDefault();var v=el("q").value.trim();if(v)ask(v)});
+function renderInsights(list){
+  var colr={urgent:"var(--bad)",watch:"var(--warn)",info:"var(--s2)"};
+  el("ins").innerHTML='<div class="sec-t">This week</div>'+(list.length?list.map(function(o){return '<div class="ins"><span class="dot" style="background:'+(colr[o.level]||colr.info)+'"></span><span>'+o.text+'</span></div>'}).join(""):'<div class="ins">No insights yet.</div>');
+}
+function localInsights(){
+  var out=[],fast=inv.filter(function(i){return i.sp>0}).map(function(i){return{i:i,g:i.s30/i.sp}}).sort(function(a,b){return b.g-a.g})[0];
+  var urgent=inv.filter(function(i){var d=daysLeft(i);return d!==null&&d<=7}).sort(function(a,b){return daysLeft(a)-daysLeft(b)});
+  if(urgent[0])out.push({level:"urgent",text:"<b>"+esc(urgent[0].name)+"</b> runs out in about "+daysLeft(urgent[0])+" days at "+esc(urgent[0].loc)+". Reorder now."});
+  if(fast&&fast.g>1.2)out.push({level:"watch",text:"<b>"+esc(fast.i.name)+"</b> is selling "+fast.g.toFixed(1)+"x faster than the previous 30 days."});
+  var slow=inv.filter(function(i){return status(i)==="ok"&&i.s30*3<i.qty*0.2}).sort(function(a,b){return b.qty-a.qty})[0];
+  if(slow)out.push({level:"info",text:"<b>"+esc(slow.name)+"</b> moves slowly. "+fmt(slow.qty)+" "+esc(slow.unit)+" on hand; hold off restocking."});
+  return out;
+}
+
+// ---- Edit stock ----
+function editHtml(i){
+  return '<form class="efrm" id="editform" data-sku="'+esc(i.sku)+'">'+
+   '<div class="full sec-t">Update stock</div>'+
+   '<div><label for="e-delta">Change (use - to remove)</label><input type="number" id="e-delta" step="1" required placeholder="e.g. 10 or -3"></div>'+
+   '<div><label for="e-why">Reason</label><select id="e-why"><option value="received">Received stock</option><option value="sold">Sold</option><option value="damaged">Damaged or lost</option><option value="correction">Count correction</option></select></div>'+
+   '<div class="full"><label for="e-note">Note (optional)</label><input type="text" id="e-note" maxlength="200"></div>'+
+   '<div class="full err" id="e-msg" role="alert"></div>'+
+   '<div class="full"><button class="btn" type="submit">Apply</button></div></form>';
+}
+function sampleChange(sku,delta,why,note){
+  var it=inv.filter(function(x){return x.sku===sku})[0];if(!it)return "Item not found.";
+  if(it.qty+delta<0)return "That would take stock below zero.";
+  it.qty+=delta;
+  act.unshift({time:new Date().toISOString(),item:it.name,sku:sku,action:delta>0?"Add":(why==="sold"?"Sold":"Remove"),change:delta,sender:"",notes:note||"Changed from dashboard"});
+  return "";
+}
+function afterChange(sku){renderAll();renderInsights(localInsights());if(sku)openDrawer(sku,lastFocus)}
+el("dbody").addEventListener("submit",function(e){
+  var f=e.target.closest("#editform");if(!f)return;e.preventDefault();
+  var sku=f.getAttribute("data-sku"),delta=Number(el("e-delta").value),why=el("e-why").value,note=el("e-note").value.trim(),msg=el("e-msg");
+  if(!isFinite(delta)||delta===0){msg.className="full err";msg.textContent="Enter a number other than 0.";return}
+  msg.className="full ok";msg.textContent="Saving...";
+  if(!live){var er=sampleChange(sku,delta,why,note);if(er){msg.className="full err";msg.textContent=er;return}afterChange(sku);return}
+  callN8n({mode:"adjust",sku:sku,delta:delta,reason:why,note:note}).then(function(){reloadData(sku)}).catch(function(x){msg.className="full err";msg.textContent=x.message})
+});
+el("additem").addEventListener("click",function(){el("addform").hidden=!el("addform").hidden});
+el("a-cancel").addEventListener("click",function(){el("addform").hidden=true});
+el("addform").addEventListener("submit",function(e){
+  e.preventDefault();var er=el("a-err");er.className="full err";er.textContent="";
+  var name=el("a-name").value.trim(),sku=el("a-sku").value.trim()||name.toUpperCase().replace(/[^A-Z0-9]+/g,"-").replace(/^-|-$/g,"").slice(0,24);
+  var b={mode:"add_item",sku:sku,name:name,qty:Number(el("a-qty").value),unit:el("a-unit").value.trim(),loc:el("a-loc").value.trim(),thr:el("a-thr").value};
+  if(!name){er.textContent="Enter an item name.";return}
+  if(!live){
+    if(inv.some(function(x){return x.sku===sku})){er.textContent="An item with this code already exists.";return}
+    inv.push({name:name,sku:sku,qty:b.qty,unit:b.unit||"pcs",loc:b.loc||"n/a",thr:Number(b.thr)||0,last:new Date().toISOString().slice(0,10),s30:0,sp:0});
+    act.unshift({time:new Date().toISOString(),item:name,sku:sku,action:"Add",change:b.qty,sender:"",notes:"New item from dashboard"});
+    el("addform").reset();el("addform").hidden=true;afterChange();return;
+  }
+  er.className="full ok";er.textContent="Saving...";
+  callN8n(b).then(function(){el("addform").reset();el("addform").hidden=true;reloadData()}).catch(function(x){er.className="full err";er.textContent=x.message});
+});
+function reloadData(keepSku){
+  callN8n({mode:"data"}).then(function(d){applyData(d);if(keepSku)openDrawer(keepSku,lastFocus);else closeDrawer()}).catch(function(){})
+}
+
+// ---- Assistant chat ----
+var chatHist=[];
+function renderChat(){
+  var t=el("chatlog");
+  if(!chatHist.length){t.innerHTML='<div class="note">Ask a question or tell the assistant what changed, for example "sold 3 rice". It answers the same way the WhatsApp bot does.</div>';return}
+  t.innerHTML=chatHist.map(function(m){return '<div class="msg '+(m.dir==="out"?"out":"in")+'">'+esc(m.text)+'</div>'}).join("");t.scrollTop=t.scrollHeight;
+}
+el("chatform").addEventListener("submit",function(e){
+  e.preventDefault();var q=el("chatq").value.trim();if(!q)return;el("chatq").value="";
+  chatHist.push({dir:"in",text:q});renderChat();
+  if(!live){chatHist.push({dir:"out",text:"Sample mode: connect n8n and sign in to chat with your real assistant."});renderChat();return}
+  el("chatsend").disabled=true;chatHist.push({dir:"out",text:"..."});renderChat();
+  callN8n({mode:"chat",message:q}).then(function(r){chatHist[chatHist.length-1].text=r.reply||"No answer.";renderChat();reloadData()})
+   .catch(function(x){chatHist[chatHist.length-1].text="Could not reach the assistant: "+x.message;renderChat()}).then(function(){el("chatsend").disabled=false});
+});
+
+// ---- render + start ----
+function renderAll(){
+  fillLocs();renderKpis();renderHealth();renderChart();renderMovers();renderLoc();renderTable();renderReorder();renderAct();renderConvo();renderChat();
+  if(openSku)openDrawer(openSku,lastFocus);
+}
+function setMode(isLive,msg){live=isLive;var t=el("tag");t.textContent=msg;t.className="tag"+(isLive?" live":"")}
+function defaultPicks(){picked={};reorderList().forEach(function(i){picked[i.sku]=true})}
+function useSample(msg){
+  inv=SAMPLE_INV;setWeeks(SAMPLE_WEEKS);act=SAMPLE_ACT;threads=SAMPLE_THREADS;applySettings({});defaultPicks();setMode(false,msg);renderAll();renderInsights(localInsights());ask("What should I reorder this week?");
+}
+function applySettings(s){
+  var lab=s.usedLabel||"Sold";
+  el("lgSold").textContent=lab;el("chartTitle").textContent=lab+" vs restocked";
+  if(s.business)el("biz").textContent=s.business;else if(CONFIG.business)el("biz").textContent=CONFIG.business;else el("biz").textContent="Sample business";
+}
+function applyData(d){
+  inv=d.inventory||[];setWeeks((d.weeks||[]).map(function(w){return [w.label,w.sold,w.restocked]}));act=d.activity||[];threads=d.threads||[];
+  me=d.me||me;canEdit=(me.role==="owner"||me.role==="manager");
+  applySettings(Object.assign({business:me.business},d.settings||{}));
+  el("additem").hidden=!canEdit;defaultPicks();
+  setMode(true,"Live · "+new Date().toLocaleTimeString("en-GB",{hour:"2-digit",minute:"2-digit"}));el("foot").textContent="";renderAll();renderInsights(localInsights());
+}
+function showLogin(msg){el("app").hidden=true;el("login").hidden=false;el("lerr").textContent=msg||""}
+function showApp(){el("login").hidden=true;el("app").hidden=false}
+function load(){
+  if(!CONFIG.url){canEdit=true;el("additem").hidden=false;useSample("Sample data");el("foot").textContent="Set the n8n address and your Supabase details in CONFIG at the top of the script to show live data. Without them this page shows sample data.";return}
+  if(CONFIG.supabaseUrl&&!sb){
+    if(!window.supabase){showLogin("Could not load the sign-in library. Check your connection.");return}
+    sb=window.supabase.createClient(CONFIG.supabaseUrl,CONFIG.supabaseKey);
+  }
+  var gate=sb?sb.auth.getSession().then(function(r){return r.data&&r.data.session}):Promise.resolve(true);
+  gate.then(function(ok){
+    if(!ok){showLogin("");return}
+    showApp();el("refresh").hidden=false;el("signout").hidden=!sb;setMode(false,"Connecting...");
+    callN8n({mode:"data"}).then(function(d){
+      applyData(d);
+      callN8n({mode:"insights"}).then(function(r){if(r.insights&&r.insights.length)renderInsights(r.insights.map(function(x){return{level:x.level,text:esc(x.text)}}))}).catch(function(){});
+      ask("What should I reorder this week?");
+    }).catch(function(x){
+      if(x.status===401&&sb){sb.auth.signOut().then(function(){showLogin("Your session ended. Please sign in again.")});return}
+      if(x.status===403&&sb){sb.auth.signOut().then(function(){showLogin(x.message)});return}
+      useSample("Sample data (n8n unreachable)");el("foot").textContent="Could not reach n8n. Check the address and that the workflow is active."
+    });
+  });
+}
+el("loginform").addEventListener("submit",function(e){
+  e.preventDefault();el("lerr").textContent="Signing in...";
+  if(!sb){el("lerr").textContent="Sign-in is not set up.";return}
+  sb.auth.signInWithPassword({email:el("lemail").value.trim(),password:el("lpass").value}).then(function(r){
+    if(r.error){el("lerr").textContent=r.error.message;return}
+    el("lpass").value="";load();
+  });
+});
+el("signout").addEventListener("click",function(){if(sb)sb.auth.signOut().then(function(){showLogin("")})});
+el("refresh").addEventListener("click",load);
+showTab("overview");
+load();
+
+// Theme toggle: light / dark, remembered per viewer when storage is available
+(function(){
+  var root=document.documentElement,btn=document.getElementById("theme"),ic=document.getElementById("ti"),lb=document.getElementById("tl");
+  var mq=window.matchMedia("(prefers-color-scheme: dark)");
+  function eff(){var d=root.getAttribute("data-theme");return d||(mq.matches?"dark":"light")}
+  function paint(){
+    var dark=eff()==="dark";
+    ic.innerHTML=dark?'<circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/>':'<path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z"/>';
+    lb.textContent=dark?"Light":"Dark";
+    btn.setAttribute("aria-label",dark?"Switch to light theme":"Switch to dark theme");
+  }
+  try{var s=localStorage.getItem("sf-theme");if(s==="dark"||s==="light")root.setAttribute("data-theme",s)}catch(e){}
+  btn.addEventListener("click",function(){
+    var n=eff()==="dark"?"light":"dark";root.setAttribute("data-theme",n);
+    try{localStorage.setItem("sf-theme",n)}catch(e){}
+    paint();
+  });
+  if(mq.addEventListener)mq.addEventListener("change",paint);
+  paint();
+})();
+</script>
+
