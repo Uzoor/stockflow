@@ -443,6 +443,8 @@ button.bub{cursor:pointer}
 
 .cbox .clip{flex:none;width:40px;height:40px;color:var(--ink2)}
 .cbox .clip:hover{color:var(--brand-ink)}
+.cbox .clip.rec{color:#e5484d;animation:vnpulse 1.1s ease-in-out infinite}
+@keyframes vnpulse{50%{opacity:.45}}
 .chatcard.drop{outline:2px dashed var(--brand);outline-offset:-6px}
 .impcard{margin-top:10px;border:1px solid var(--line);border-radius:14px;background:var(--surface);padding:12px 14px;display:grid;gap:10px}
 .impcard .chips{display:flex;flex-wrap:wrap;gap:6px}
@@ -600,7 +602,7 @@ button.bub{cursor:pointer}
             <div class="quick" id="quick"></div>
             <form class="cbox" id="chatForm">
               <label class="sr" for="chatIn">Message the assistant</label>
-              <button class="ibtn plain clip" type="button" id="clipBtn" aria-label="Attach a CSV stock list" title="Attach a CSV stock list"></button><input type="file" id="fileIn" accept=".csv,.txt,text/csv,text/plain" hidden>
+              <button class="ibtn plain clip" type="button" id="clipBtn" aria-label="Attach a CSV stock list" title="Attach a CSV stock list"></button><input type="file" id="fileIn" accept=".csv,.txt,text/csv,text/plain" hidden><button class="ibtn plain clip" type="button" id="micBtn" aria-label="Record a voice note" title="Record a voice note"></button>
               <textarea id="chatIn" rows="1" placeholder="Ask about stock, or say what changed: sold 3 rice" autocomplete="off"></textarea>
               <button class="send" type="submit" id="chatSend" aria-label="Send message"></button>
             </form>
@@ -650,7 +652,7 @@ button.bub{cursor:pointer}
 <script>
 // ===== SETTINGS: fill these in to go live. Leave url empty to show sample data. =====
 var CONFIG={
-  url:"https://uzoo.app.n8n.cloud/webhook/stockflow", // your n8n address, e.g. "https://uzoo.app.n8n.cloud/webhook/stockflow"
+  url:"https://akusinachi.app.n8n.cloud/webhook/stockflow", // your n8n address, e.g. "https://akusinachi.app.n8n.cloud/webhook/stockflow"
   supabaseUrl:"https://nxqlujwqavqpvliccmdc.supabase.co",  // Supabase > Project Settings > API > Project URL
   supabaseKey:"eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im54cWx1andxYXZxcHZsaWNjbWRjIiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTE4ODAzMDQsImV4cCI6MjEwNzQ1NjMwNH0.niE9DzY6bOQ9L6jNBGpLO7EOEjJu8Kr5UiRbDOHAcVY",  // Supabase anon (public) key. Safe to put here.
   business:"",     // optional: shown until your business loads
@@ -659,6 +661,7 @@ var CONFIG={
 
 /* ---------- icons ---------- */
 var ICONS={
+ mic:'<rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5 11a7 7 0 0 0 14 0M12 18v3"/>',
  home:'<path d="M3 11.5 12 4l9 7.5"/><path d="M5 10v10h14V10"/><path d="M10 20v-6h4v6"/>',
  box:'<path d="M12 3 4 7v10l8 4 8-4V7z"/><path d="m4 7 8 4 8-4M12 11v10"/>',
  chat:'<path d="M5 5h14a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2h-8l-5 4v-4H5a2 2 0 0 1-2-2V7a2 2 0 0 1 2-2z"/><path d="M8 10h8M8 13h5"/>',
@@ -1249,6 +1252,47 @@ function sendChat(text){
   }).catch(function(x){bot.typing=false;bot.err=true;bot.text="I could not reach the assistant: "+x.message;bot.time=new Date().toISOString()}).then(done);
 }
 
+/* ---------- voice note ---------- */
+// Tap the mic, speak, tap again. The text lands in the chat box so you can check it, then press Send.
+var VN={state:"idle",rec:null,chunks:[],stream:null,timer:null,ph:""};
+function vnSet(st){
+  VN.state=st;var b=$("micBtn"),ci=$("chatIn");
+  if(!VN.ph)VN.ph=ci.placeholder;
+  b.classList.toggle("rec",st==="rec");b.disabled=(st==="work");
+  var l=st==="rec"?"Stop recording":"Record a voice note";b.setAttribute("aria-label",l);b.title=l;
+  ci.placeholder=st==="rec"?"Listening… tap the mic again when done":st==="work"?"Transcribing…":VN.ph;
+}
+function vnStart(){
+  if(!S.live){toast("Sign in to use voice notes");return}
+  if(!navigator.mediaDevices||!window.MediaRecorder){toast("Voice notes are not supported on this browser");return}
+  navigator.mediaDevices.getUserMedia({audio:true}).then(function(stream){
+    var mt=["audio/webm;codecs=opus","audio/webm","audio/mp4"].filter(function(t){return MediaRecorder.isTypeSupported(t)})[0]||"";
+    var r=mt?new MediaRecorder(stream,{mimeType:mt}):new MediaRecorder(stream);
+    VN.stream=stream;VN.rec=r;VN.chunks=[];
+    r.ondataavailable=function(e){if(e.data&&e.data.size)VN.chunks.push(e.data)};
+    r.onstop=function(){vnDone(r.mimeType||mt||"audio/webm")};
+    r.start();vnSet("rec");
+    VN.timer=setTimeout(vnStop,60000);
+  }).catch(function(){toast("Microphone blocked. Allow mic access and try again.")});
+}
+function vnStop(){clearTimeout(VN.timer);if(VN.rec&&VN.rec.state!=="inactive")VN.rec.stop()}
+function vnDone(type){
+  if(VN.stream)VN.stream.getTracks().forEach(function(t){t.stop()});
+  var blob=new Blob(VN.chunks,{type:type});
+  if(blob.size<1500){vnSet("idle");toast("Did not catch that. Try again.");return}
+  vnSet("work");
+  var tok=sb?sb.auth.getSession().then(function(r){return r.data&&r.data.session?r.data.session.access_token:""}):Promise.resolve("");
+  tok.then(function(t){return fetch("/api/transcribe",{method:"POST",headers:{"Content-Type":type.split(";")[0],"Authorization":"Bearer "+t},body:blob})})
+  .then(function(r){return r.json().catch(function(){return {}}).then(function(j){if(!r.ok)throw new Error(j.error||("HTTP "+r.status));return j})})
+  .then(function(j){
+    if(!j.text){toast("Did not catch that. Try again.");return}
+    var ci=$("chatIn");ci.value=(ci.value?ci.value+" ":"")+j.text;
+    ci.style.height="auto";ci.style.height=Math.min(140,ci.scrollHeight)+"px";ci.focus();
+  })
+  .catch(function(x){toast("Voice failed: "+x.message)})
+  .then(function(){vnSet("idle")});
+}
+
 /* ---------- workflow ---------- */
 function deltaTxt(cur,prev,lowerBetter){
   if(!prev||cur==null)return '<small>no earlier data</small>';
@@ -1570,6 +1614,7 @@ document.addEventListener("click",function(e){
   if(t.closest("[data-install]")){if(S.installEv){S.installEv.prompt();S.installEv=null}return}
   if(t.closest("#signout")||t.closest("#signout2")){signOut();return}
   if(t.closest("#clipBtn")){$("fileIn").click();return}
+  if(t.closest("#micBtn")){if(VN.state==="rec")vnStop();else if(VN.state==="idle")vnStart();return}
   if(b=t.closest("[data-imp]")){var ip=b.getAttribute("data-imp").split(":");if(ip[0]==="apply")importRun(+ip[1]);else{var im=S.chat[+ip[1]];if(im&&im.imp){im.imp.state="cancelled";renderMsgs()}}return}
   if(t.closest("#gotoLogin")||t.closest("#gotoLogin2")){closeSheet();showLogin("");return}
   if(t.closest("#backDemo")){enterDemo();return}
@@ -1667,7 +1712,7 @@ window.addEventListener("online",function(){if(CONFIG.url&&S.live)refresh(true)}
 (function init(){
   try{var th=localStorage.getItem("sf-theme");if(th==="dark"||th==="light")document.documentElement.setAttribute("data-theme",th)}catch(e){}
   $("ic-s").innerHTML=ic("search");$("openSettings").innerHTML=ic("sliders")+"Settings";$("openHelp").innerHTML=ic("help")+"Help &amp; support";
-  $("chatSend").innerHTML=ic("send");$("clipBtn").innerHTML=ic("clip");$("sheetX").innerHTML=ic("x");
+  $("chatSend").innerHTML=ic("send");$("clipBtn").innerHTML=ic("clip");$("micBtn").innerHTML=ic("mic");$("sheetX").innerHTML=ic("x");
   hydrate();paintTheme();initCharts();tick();setInterval(tick,20000);
   if(matchMedia)matchMedia("(prefers-color-scheme: dark)").addEventListener&&matchMedia("(prefers-color-scheme: dark)").addEventListener("change",paintTheme);
   setInterval(function(){if(S.live&&!S.offline&&!document.hidden&&$("sheet").hidden&&document.activeElement!==$("chatIn")&&!S.busy)refresh(false)},60000);
